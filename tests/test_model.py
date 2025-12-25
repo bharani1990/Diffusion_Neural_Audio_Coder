@@ -1,5 +1,12 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
-from model import DiffusionUNet
+from src.model import DiffusionUNet
 
 x = torch.load("data/processed_norm/train-clean-5/19/198/19-198-0000.pt").float()
 if x.dim() == 3:
