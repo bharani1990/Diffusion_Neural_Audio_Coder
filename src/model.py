@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 
+
 class SinusoidalTimeEmbedding(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -18,6 +19,7 @@ class SinusoidalTimeEmbedding(nn.Module):
         if self.dim % 2 == 1:
             emb = nn.functional.pad(emb, (0, 1))
         return emb
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, time_emb_dim):
@@ -41,8 +43,11 @@ class ResidualBlock(nn.Module):
         h = self.conv2(h)
         return x + h
 
+
 class DiffusionUNet(nn.Module):
-    def __init__(self, in_channels=1, base_channels=64, channel_mults=(1, 2, 4), time_emb_dim=256):
+    def __init__(
+        self, in_channels=1, base_channels=64, channel_mults=(1, 2, 4), time_emb_dim=256
+    ):
         super().__init__()
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbedding(time_emb_dim),

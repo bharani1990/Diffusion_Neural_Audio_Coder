@@ -3,6 +3,7 @@ import json
 import torch
 from torch.utils.data import Dataset
 
+
 class SpectrogramDataset(Dataset):
     def __init__(self, manifest_path, target_frames=120):
         self.manifest_path = Path(manifest_path)

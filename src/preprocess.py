@@ -2,6 +2,7 @@ from pathlib import Path
 import torch
 import json
 
+
 def list_specs(root):
     root = Path(root)
     paths = []
@@ -10,6 +11,7 @@ def list_specs(root):
             continue
         paths.append(p)
     return sorted(paths)
+
 
 def compute_stats(root_in, stats_path):
     paths = list_specs(root_in)
@@ -26,11 +28,12 @@ def compute_stats(root_in, stats_path):
         sq_mean += (x_flat * x_flat).sum()
         count += n
     mean = mean / count
-    var = sq_mean / count - mean * mean
-    std = torch.sqrt(var)
-    stats = {"mean": mean.item(), "std": std.item()}
+    variance = sq_mean / count - mean * mean
+    std = torch.sqrt(torch.tensor(variance))
+    stats = {"mean": float(mean), "std": std.item()}
     torch.save(stats, stats_path)
     return stats
+
 
 def normalize_and_manifest(root_in, root_out, stats, manifest_path):
     root_in, root_out = Path(root_in), Path(root_out)
@@ -56,4 +59,3 @@ def normalize_and_manifest(root_in, root_out, stats, manifest_path):
     with open(manifest_path, "w", encoding="utf-8") as f:
         for e in entries:
             f.write(json.dumps(e) + "\n")
-

@@ -7,6 +7,23 @@ from src.utils_audio import process_root
 from src.preprocess import compute_stats, normalize_and_manifest
 from src.dataset import SpectrogramDataset
 from src.train_module import DiffusionLightningModule
+import lightning as L
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
+early_stop = EarlyStopping(
+    monitor="val_loss",
+    mode="min",
+    patience=5,
+    verbose=True,
+)
+
+checkpoint_cb = ModelCheckpoint(
+    monitor="val_loss",
+    mode="min",
+    save_top_k=1,
+    save_last=True,
+    filename="best-{epoch:02d}-{val_loss:.4f}",
+)
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
@@ -20,7 +37,7 @@ if __name__ == "__main__":
     p.add_argument("--dev_manifest", default="data/processed/dev_manifest.jsonl")
     p.add_argument("--batch_size", type=int, default=8)
     p.add_argument("--frames", type=int, default=120)
-    p.add_argument("--max_epochs", type=int, default=1)
+    p.add_argument("--max_epochs", type=int, default=10)
     p.add_argument("--lr", type=float, default=1e-4)
     args = p.parse_args()
 
@@ -41,12 +58,27 @@ if __name__ == "__main__":
     elif args.stage == "train":
         train_ds = SpectrogramDataset(args.train_manifest, target_frames=args.frames)
         dev_ds = SpectrogramDataset(args.dev_manifest, target_frames=args.frames)
-        train_dl = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=4)
-        dev_dl = DataLoader(dev_ds, batch_size=args.batch_size, shuffle=False, num_workers=4)
-        model = DiffusionLightningModule(in_channels=1, n_mels=80, frames=args.frames, lr=args.lr)
+        train_dl = DataLoader(
+            train_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True,
+        )
+        dev_dl = DataLoader(
+            dev_ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            persistent_workers=True,
+        )
+        model = DiffusionLightningModule(
+            in_channels=1, n_mels=80, frames=args.frames, lr=args.lr
+        )
         trainer = L.Trainer(
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=1,
             max_epochs=args.max_epochs,
+            callbacks=[early_stop, checkpoint_cb],
         )
         trainer.fit(model, train_dl, dev_dl)

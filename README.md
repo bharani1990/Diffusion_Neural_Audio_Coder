@@ -28,8 +28,8 @@
 
 - **Step 5:** Create a lightning module and use it as a wrapper for training
   - `uv run python main.py --stage train \
-  --train_manifest data/processed_norm/train-clean-5/train_manifest.jsonl \
-  --dev_manifest   data/processed_norm/dev-clean-2/dev_manifest.jsonl \
+  --train_manifest data/processed/train_manifest.jsonl \
+  --dev_manifest   data/processed/dev_manifest.jsonl \
   --batch_size 8 \
   --frames 120 \
   --max_epochs 10 \

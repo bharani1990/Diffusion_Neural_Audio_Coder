@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 import lightning as L
+from pathlib import Path
+import json
 from src.model import DiffusionUNet
+
 
 class DiffusionLightningModule(L.LightningModule):
     def __init__(self, in_channels=1, n_mels=80, frames=120, timesteps=1000, lr=1e-4):
@@ -10,6 +13,8 @@ class DiffusionLightningModule(L.LightningModule):
         self.model = DiffusionUNet(in_channels=in_channels)
         self.timesteps = timesteps
         self.lr = lr
+        self.train_losses = []
+        self.val_losses = []
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
@@ -37,6 +42,7 @@ class DiffusionLightningModule(L.LightningModule):
         xt, noise = self._add_noise(x0, t, noise)
         pred = self.model(xt, t)
         loss = nn.functional.mse_loss(pred, noise)
+        self.train_losses.append(loss.detach().cpu().item())
         self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True)
         return loss
 
@@ -48,5 +54,17 @@ class DiffusionLightningModule(L.LightningModule):
         xt, noise = self._add_noise(x0, t, noise)
         pred = self.model(xt, t)
         loss = nn.functional.mse_loss(pred, noise)
+        self.val_losses.append(loss.detach().cpu().item())
         self.log("val_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
+
+    def on_train_end(self):
+        root = Path.cwd()
+        plots_dir = root / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        out = {
+            "train_loss": self.train_losses,
+            "val_loss": self.val_losses,
+        }
+        with open(plots_dir / "loss_curves.json", "w", encoding="utf-8") as f:
+            json.dump(out, f)

@@ -3,7 +3,10 @@ import torch
 import soundfile as sf
 import torchaudio
 
-def process_root(root_in, root_out, sample_rate=16000, n_mels=80, n_fft=1024, hop_length=256):
+
+def process_root(
+    root_in, root_out, sample_rate=16000, n_mels=80, n_fft=1024, hop_length=256
+):
     root_in, root_out = Path(root_in), Path(root_out)
     for path in root_in.rglob("*.flac"):
         rel = path.relative_to(root_in)
