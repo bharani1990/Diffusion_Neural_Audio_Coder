@@ -3,13 +3,12 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+    
 from src.dataset import SpectrogramDataset
 from src.model import DiffusionUNet
-
 
 def load_unet(state_path: Path, in_channels: int = 1) -> DiffusionUNet:
     model = DiffusionUNet(in_channels=in_channels)

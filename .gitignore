@@ -189,6 +189,7 @@ our_model.tar
 test.png
 saved_models
 data/
+eval_outputs/
 !examples/data/
 !tests/tests_pytorch/utilities/data/
 !requirements/data/
