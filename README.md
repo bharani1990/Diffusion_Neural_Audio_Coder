@@ -36,4 +36,4 @@
   --lr 1e-4`
 
 - **Step 6:** To check if everything works, we can run the `eval_codec.py` from the demo
-  - `uv run python ./demo/eval_codec.py`
+  - `uv run python demo/eval_codec.py`
