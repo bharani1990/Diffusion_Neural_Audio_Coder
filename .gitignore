@@ -188,6 +188,7 @@ artifacts/*
 our_model.tar
 test.png
 saved_models
+BigVGAN/
 data/
 eval_outputs/
 !examples/data/

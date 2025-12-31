@@ -101,7 +101,7 @@ def main():
         if not flac_ref.exists():
             print(f"Warning! Missing reference: {flac_ref}")
             continue
-        ref_wav, ref_sr = sf.read(flac_ref)
+        ref_wav, ref_sr = sf.read(str(flac_ref))
         if ref_sr != sample_rate:
             ref_wav = torchaudio.functional.resample(torch.tensor(ref_wav), ref_sr, sample_rate).numpy()
 

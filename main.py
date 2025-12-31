@@ -7,6 +7,8 @@ from src.utils_audio import process_root
 from src.preprocess import compute_stats, normalize_and_manifest
 from src.dataset import SpectrogramDataset
 from src.train_module import DiffusionLightningModule
+from demo.exp_2.model import Experiment2Codec
+from src.model import DiffusionUNet
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -27,7 +29,8 @@ checkpoint_cb = ModelCheckpoint(
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--stage", choices=["extract", "preprocess", "train"], required=True)
+    p.add_argument("--stage", choices=["extract", "preprocess", "train", "eval"], required=True)
+    p.add_argument("--model", choices=["old", "new"], default="old")
     p.add_argument("--root_in", required=False)
     p.add_argument("--root_out", required=False)
     p.add_argument("--sample_rate", type=int, default=16000)
@@ -39,6 +42,7 @@ if __name__ == "__main__":
     p.add_argument("--frames", type=int, default=120)
     p.add_argument("--max_epochs", type=int, default=10)
     p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--checkpoint_path", default="lightning_logs/version_0/checkpoints/last.ckpt")
     args = p.parse_args()
 
     if args.stage == "extract":
@@ -82,3 +86,22 @@ if __name__ == "__main__":
             callbacks=[early_stop, checkpoint_cb],
         )
         trainer.fit(model, train_dl, dev_dl)
+
+    elif args.stage == "eval":
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        if args.model == "new":
+            encoder = DiffusionUNet(in_channels=1)
+            if Path(args.checkpoint_path).exists():
+                checkpoint = torch.load(args.checkpoint_path, map_location=device)
+                encoder.load_state_dict(checkpoint['state_dict'])
+            model = Experiment2Codec(encoder=encoder)
+            model.load_vocoder()
+            print("Loaded NEW model (Diffusion + HiFi-GAN)")
+        else:
+            model = DiffusionLightningModule.load_from_checkpoint(args.checkpoint_path)
+            print("Loaded OLD model (Diffusion + Griffin-Lim)")
+        
+        model = model.to(device).eval()
+        print(f"Model: {args.model}, Checkpoint: {args.checkpoint_path}")
+        print("Ready for evaluation!")
