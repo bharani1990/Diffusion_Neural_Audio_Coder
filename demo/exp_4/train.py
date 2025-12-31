@@ -14,7 +14,7 @@ from src.dataset import SpectrogramDataset
 from demo.exp_4.train_module import CompressionLightningModule
 
 
-def train(epochs=100, batch_size=16, lr=1e-4, latent_dim=4, hidden_dim=64):
+def train(epochs=100, batch_size=16, lr=1e-4, latent_dim=8, hidden_dim=128):
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     

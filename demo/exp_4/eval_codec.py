@@ -67,7 +67,7 @@ def evaluate_model(model, test_files):
             
             latent_elements = indices.numel()
             duration_sec = len(ref_np) / 16000.0
-            bitrate = (latent_elements * 9) / (duration_sec * 1000)
+            bitrate = (latent_elements * 11) / (duration_sec * 1000)
             
             min_len = min(len(ref_np), len(recon_np))
             ref_np = ref_np[:min_len]
