@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 from src.dataset import SpectrogramDataset
 from src.model import DiffusionUNet
-from demo.vocoder import mel_to_linear, griffin_lim_waveform
+from demo.exp_1.vocoder import mel_to_linear, griffin_lim_waveform
 
 def load_unet(state_path: Path, in_channels: int = 1) -> DiffusionUNet:
     model = DiffusionUNet(in_channels=in_channels)
