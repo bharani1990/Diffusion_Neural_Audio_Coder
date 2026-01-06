@@ -4,6 +4,8 @@ import torch
 import time
 import numpy as np
 from pathlib import Path
+import pesq
+import pystoi
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -27,6 +29,15 @@ def mel_to_waveform(mel_spec, sample_rate=22050):
     griffin_lim = T.GriffinLim(n_fft=n_fft, hop_length=hop_length)
     waveform = griffin_lim(torch.abs(mag_spec))
     return waveform
+
+def calculate_bitrate(latent, duration_sec):
+    compressed_size_bytes = latent.numel() * 4
+    if duration_sec > 0:
+        bitrate_bps = (compressed_size_bytes * 8) / duration_sec
+    else:
+        bitrate_bps = 0
+    return bitrate_bps / 1000
+
 
 def main():
 
@@ -66,8 +77,6 @@ def main():
     model = model.to(device)
     model.eval()
 
-    import pesq
-    import pystoi
     results = []
     for i, (test_file, norm_file) in enumerate(zip(test_files, norm_files)):
         mel = load_tensor(test_file)
@@ -76,6 +85,9 @@ def main():
         ref_wave = mel_to_waveform(mel_norm.cpu(), sample_rate=args.sr)
         ref_np = ref_wave.numpy()
         start = time.time()
+        latent = model.compression_model.encode(mel_input)
+        duration_sec = ref_wave.shape[-1] / args.sr
+        bitrate_kbps = calculate_bitrate(latent, duration_sec)
         compressed = model.compression_model(mel_input)
         recon_wave = mel_to_waveform(compressed.squeeze(0).cpu(), sample_rate=args.sr)
         latency = (time.time() - start) * 1000
@@ -90,17 +102,22 @@ def main():
         except Exception as e:
             print(f"Metric error {i}: {e}")
             pesq_score, stoi_score = 0.0, 0.0
-        results.append({'id': i, 'pesq': pesq_score, 'stoi': stoi_score, 'latency': latency})
-        print(f"{i}: PESQ={pesq_score:.3f}, STOI={stoi_score:.3f}, latency={latency:.2f}ms")
+        results.append({'id': i, 'pesq': pesq_score, 'stoi': stoi_score, 'latency': latency, 'bitrate_kbps': bitrate_kbps})
+        print(f"{i}: PESQ={pesq_score:.3f}, STOI={stoi_score:.3f}, latency={latency:.2f}ms, bitrate={bitrate_kbps:.2f} kbps")
 
+    if not results:
+        print("No results to aggregate. No test files were found or processed.")
+        return
     mean_pesq = np.mean([r['pesq'] for r in results])
     mean_stoi = np.mean([r['stoi'] for r in results])
     mean_latency = np.mean([r['latency'] for r in results])
+    mean_bitrate = np.mean([r['bitrate_kbps'] for r in results])
     print("\n" + "="*60)
     print("AGGREGATE RESULTS")
     print(f"Mean PESQ : {mean_pesq:.3f}")
     print(f"Mean STOI : {mean_stoi:.3f}")
     print(f"Mean latency: {mean_latency:.2f}ms")
+    print(f"Mean bitrate: {mean_bitrate:.2f} kbps")
     print("="*60)
 
 if __name__ == '__main__':

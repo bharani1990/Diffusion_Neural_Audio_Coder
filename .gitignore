@@ -6,6 +6,7 @@ run_configs/
 model_weights/
 pip-wheel-metadata/
 lightning_logs/
+thesis-template-master*/
 .vscode/
 
 # Documentations
