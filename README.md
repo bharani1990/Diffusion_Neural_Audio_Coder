@@ -20,20 +20,14 @@
   --stats_path data/processed/train-clean-5/stats.pt \
   --manifest_path data/processed/dev_manifest.jsonl`
 
-- **Step 3:** Create Model and test it via the test_model file inside the tests folder
+- **Step 3:** Create Model and test it via the `tests/test_model.py` file inside the tests folder
   - `uv run python tests/test_model.py`
 
-- **Step 4:** Create the dataset and test it via the test_dataset file inside the tests folder
+- **Step 4:** Create the dataset and test it via the `tests/test_dataset.py` file inside the tests folder
   - `uv run python tests/test_dataset.py`
 
-- **Step 5:** Create a lightning module and use it as a wrapper for training
-  - `uv run python main.py --stage train \
-  --train_manifest data/processed/train_manifest.jsonl \
-  --dev_manifest   data/processed/dev_manifest.jsonl \
-  --batch_size 8 \
-  --frames 120 \
-  --max_epochs 10 \
-  --lr 1e-4`
+- **Step 5:** Create a lightning module and use it as a wrapper for training and run `src/train.py` to begin training
+  - `uv run python src/train.py`
 
-- **Step 6:** To check if everything works, we can run the `eval_codec.py` from the demo
-  - `uv run python demo/eval_codec.py`
+- **Step 6:** To check if everything works, we can run the `src/eval_codec.py` to begin testing
+  - `uv run python src/eval_codec.py`
