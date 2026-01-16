@@ -50,7 +50,6 @@ def main(checkpoint_path=None, test_file=None):
     module.eval()
 
     if test_file is None:
-        # synthetic mel: (n_mels, time)
         mel = torch.randn(80, 120)
     else:
         data = torch.load(str(test_file))

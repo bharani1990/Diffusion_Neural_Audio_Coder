@@ -188,7 +188,6 @@ class AudioCodecModule(L.LightningModule):
             pass
 
     def on_after_backward(self):
-        # compute gradient norm for diagnostics
         try:
             total_norm = 0.0
             for p in self.parameters():
