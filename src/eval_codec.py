@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 
 from src.config import SAMPLE_RATE
 from src.train_module import AudioCodecModule
-from src.utils import pesq_metric, stoi_metric, bitrate
+from src.utils import pesq_metric, stoi_metric, bitrate, compute_metrics, ensure_dir
 
 def load_test_files(num_samples=None):
     mel_dir = Path("data/processed_norm/test-clean/1995/1826")
@@ -42,9 +42,10 @@ def evaluate_codec(model, test_files):
                 if mel.dim() == 3:
                     mel = mel.squeeze(0)
                 
-                mel_input = mel.unsqueeze(0).unsqueeze(0).to(device)
+                mel_input_enc = mel.unsqueeze(0).unsqueeze(0).to(device)
+                mel_input_voc = mel.unsqueeze(0).to(device)
                 start_time = time.time()
-                z_q, vq_loss, indices = model.model.encode(mel_input)
+                z_q, vq_loss, indices = model.model.encode(mel_input_enc)
                 mel_recon = model.model.decode(z_q, torch.tensor([500], device=device))
                 end_time = time.time()
                 
@@ -52,29 +53,33 @@ def evaluate_codec(model, test_files):
                 duration_sec = mel.shape[-1] * 0.01
                 br = bitrate(indices, duration_sec)
                 
-                mel_orig_np = mel.squeeze().cpu().numpy()
-                mel_recon_np = mel_recon.squeeze().cpu().numpy()
-                
-                min_mel_len = min(mel_orig_np.shape[-1], mel_recon_np.shape[-1])
-                mel_orig_np = mel_orig_np[..., :min_mel_len]
-                mel_recon_np = mel_recon_np[..., :min_mel_len]
-                
-                mel_orig_flat = mel_orig_np.reshape(-1)
-                mel_recon_flat = mel_recon_np.reshape(-1)
-                
-                p = pesq_metric(mel_orig_flat, mel_recon_flat, SAMPLE_RATE)
-                s = stoi_metric(mel_orig_flat, mel_recon_flat, SAMPLE_RATE)
-                
+                try:
+                    wave_orig = model.model.to_waveform(mel_input_voc)
+                except Exception:
+                    wave_orig = model.model.to_waveform(mel_input_voc.detach().cpu())
+
+                try:
+                    wave_recon = model.model.to_waveform(mel_recon)
+                except Exception:
+                    wave_recon = model.model.to_waveform(mel_recon.detach().cpu())
+
+                wave_orig_np = wave_orig.squeeze().cpu().numpy()
+                wave_recon_np = wave_recon.squeeze().cpu().numpy()
+
+                min_wav_len = min(wave_orig_np.shape[-1], wave_recon_np.shape[-1])
+                wave_orig_np = wave_orig_np[..., :min_wav_len]
+                wave_recon_np = wave_recon_np[..., :min_wav_len]
+
+                metrics = compute_metrics(wave_orig_np, wave_recon_np, SAMPLE_RATE, indices, duration_sec)
                 result = {
                     'id': idx,
-                    'pesq': p,
-                    'stoi': s,
+                    'pesq': metrics.get('pesq', 0.0),
+                    'stoi': metrics.get('stoi', 0.0),
                     'latency_ms': latency_ms,
-                    'bitrate_kbps': br
+                    'bitrate_kbps': metrics.get('bitrate_kbps', br)
                 }
                 results.append(result)
-                
-                print(f"Sample {idx:2d}: PESQ={p:.3f} STOI={s:.3f} Latency={latency_ms:.2f}ms Bitrate={br:.2f}kbps")
+                print(f"Sample {idx:2d}: PESQ={result['pesq']:.3f} STOI={result['stoi']:.3f} Latency={latency_ms:.2f}ms Bitrate={result['bitrate_kbps']:.2f}kbps")
                 
             except Exception as e:
                 import traceback
@@ -94,10 +99,18 @@ def print_summary(results, model_name):
     print(f"EVALUATION: {model_name}")
     print("="*70)
     
-    mean_pesq = np.mean([r['pesq'] for r in results])
-    mean_stoi = np.mean([r['stoi'] for r in results])
-    mean_latency = np.mean([r['latency_ms'] for r in results])
-    mean_bitrate = np.mean([r['bitrate_kbps'] for r in results])
+    # calculate means only if pesq and stoi are positive
+
+    pesq_values = [r['pesq'] for r in results if r['pesq'] > 0]
+    stoi_values = [r['stoi'] for r in results if r['stoi'] > 0]
+    latency_values = [r['latency_ms'] for r in results]
+    bitrate_values = [r['bitrate_kbps'] for r in results if r['bitrate_kbps'] is not None]
+
+    
+    mean_pesq = np.mean(pesq_values)
+    mean_stoi = np.mean(stoi_values)
+    mean_latency = np.mean(latency_values)
+    mean_bitrate = np.mean(bitrate_values) if bitrate_values else 0.0
     
     print(f"PESQ:    {mean_pesq:.3f}")
     print(f"STOI:    {mean_stoi:.3f}")

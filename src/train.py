@@ -13,11 +13,14 @@ if str(ROOT) not in sys.path:
 from src.dataset import SpectrogramDataset
 from src.train_module import AudioCodecModule
 from src.utils import collate_fn
+from src import config as cfg
 
 
-def train(epochs=50, batch_size=4, lr=1e-3, latent_dim=16, hidden_dim=256):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, latent_dim=cfg.LATENT_DIM, hidden_dim=cfg.HIDDEN_DIM):
+    device = torch.device('cuda' if torch.cuda.is_available() and cfg.USE_GPU else 'cpu')
     print(f"Using device: {device}")
+    if torch.cuda.is_available() and cfg.USE_GPU:
+        torch.set_float32_matmul_precision('medium')
     
     train_dataset = SpectrogramDataset("data/processed/train_manifest.jsonl", target_frames=120)
     val_dataset = SpectrogramDataset("data/processed/dev_manifest.jsonl", target_frames=120)
@@ -26,50 +29,56 @@ def train(epochs=50, batch_size=4, lr=1e-3, latent_dim=16, hidden_dim=256):
     print(f"Validation samples: {len(val_dataset)}")
     
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=4,
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=cfg.NUM_WORKERS,
+        pin_memory=cfg.USE_GPU,
         collate_fn=collate_fn,
-        persistent_workers=True
+        persistent_workers=True,
     )
     val_loader = DataLoader(
-        val_dataset, 
-        batch_size=batch_size, 
-        shuffle=False, 
-        num_workers=4,
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=cfg.NUM_WORKERS,
+        pin_memory=cfg.USE_GPU,
         collate_fn=collate_fn,
-        persistent_workers=True
+        persistent_workers=True,
     )
     
     model = AudioCodecModule(
         latent_dim=latent_dim,
         hidden_dim=hidden_dim,
         lr=lr,
-        vq_weight=0.25,
-        perc_weight=0.5
+        vq_weight=cfg.VQ_WEIGHT,
+        perc_weight=cfg.PERCEPTUAL_WEIGHT,
     )
     
-    checkpoint_dir = Path("lightning_logs")
+    checkpoint_dir = cfg.CHECKPOINT_DIR
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir / "checkpoints",
         filename="codec-{epoch:02d}-{val_loss:.4f}",
-        monitor="val_loss",
-        mode="min",
-        save_top_k=3,
-        save_last=True
+        monitor=cfg.MONITOR_METRIC,
+        mode=cfg.MONITOR_MODE,
+        save_top_k=cfg.SAVE_TOP_K,
+        save_last=True,
     )
     
+    accelerator = 'gpu' if torch.cuda.is_available() and cfg.USE_GPU else 'cpu'
+    devices = 1 if accelerator == 'gpu' else None
+
     trainer = L.Trainer(
         max_epochs=epochs,
-        accelerator=device.type,
-        devices=1,
+        accelerator=accelerator,
+        devices=devices,
         callbacks=[checkpoint_callback],
-        logger=CSVLogger(save_dir="lightning_logs", name=""),
+        logger=CSVLogger(save_dir=str(cfg.CHECKPOINT_DIR), name=""),
+        precision=cfg.PRECISION,
         enable_progress_bar=True,
-        log_every_n_steps=10,
+        log_every_n_steps=cfg.LOG_INTERVAL,
     )
     
     print("\n" + "="*70)

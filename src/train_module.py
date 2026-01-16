@@ -11,17 +11,22 @@ class PerceptualLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x, x_recon):
-        loss = F.l1_loss(x, x_recon)
-        if x.size(1) > 1:
+    def forward(self, target, recon):
+        if target.dim() == 4 and recon.dim() == 4 and target.size(1) != recon.size(1):
+            if target.size(1) > recon.size(1):
+                target = target.mean(dim=1, keepdim=True)
+            else:
+                recon = recon.mean(dim=1, keepdim=True)
+        loss = F.l1_loss(target, recon)
+        if target.size(1) > 1:
             for scale in [1, 2, 4]:
                 if scale > 1:
-                    x_down = F.avg_pool2d(x, kernel_size=scale, stride=scale)
-                    x_recon_down = F.avg_pool2d(x_recon, kernel_size=scale, stride=scale)
+                    t_down = F.avg_pool2d(target, kernel_size=scale, stride=scale)
+                    r_down = F.avg_pool2d(recon, kernel_size=scale, stride=scale)
                 else:
-                    x_down = x
-                    x_recon_down = x_recon
-                loss = loss + 0.1 * F.l1_loss(x_down, x_recon_down)
+                    t_down = target
+                    r_down = recon
+                loss = loss + 0.1 * F.l1_loss(t_down, r_down)
         return loss
 
 
@@ -46,25 +51,53 @@ class AudioCodecModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch
         t = torch.randint(0, 1000, (x.size(0),), device=x.device)
+
         mel, vq_loss = self.model(x, t)
-        
-        recon_loss = self.recon_fn(mel, x)
-        perc_loss = self.perc_fn(mel, x)
+
+        if mel.dim() == 4 and x.dim() == 4 and mel.size(1) != x.size(1):
+            mel_for_loss = mel.mean(dim=1, keepdim=True)
+        else:
+            mel_for_loss = mel
+
+        recon_loss = self.recon_fn(mel_for_loss, x)
+        perc_loss = self.perc_fn(x, mel_for_loss)
         total_loss = recon_loss + self.perc_weight * perc_loss + self.vq_weight * vq_loss
-        
-        self.log("train_loss", total_loss, prog_bar=True)
+
+        with torch.no_grad():
+            mel_cpu = mel_for_loss.detach().cpu()
+            x_cpu = x.detach().cpu()
+            vq_cpu = vq_loss.detach().cpu() if isinstance(vq_loss, torch.Tensor) else torch.tensor(vq_loss)
+            recon_cpu = self.recon_fn(mel_cpu, x_cpu)
+            perc_cpu = self.perc_fn(mel_cpu, x_cpu)
+            total_cpu = recon_cpu + self.perc_weight * perc_cpu + self.vq_weight * vq_cpu
+
+        self.log("train_loss", float(total_cpu), prog_bar=True)
         return total_loss
 
     def validation_step(self, batch, batch_idx):
         x = batch
         t = torch.randint(0, 1000, (x.size(0),), device=x.device)
+
         mel, vq_loss = self.model(x, t)
-        
-        recon_loss = self.recon_fn(mel, x)
-        perc_loss = self.perc_fn(mel, x)
+
+        if mel.dim() == 4 and x.dim() == 4 and mel.size(1) != x.size(1):
+            mel_for_loss = mel.mean(dim=1, keepdim=True)
+        else:
+            mel_for_loss = mel
+
+        recon_loss = self.recon_fn(mel_for_loss, x)
+        perc_loss = self.perc_fn(x, mel_for_loss)
         total_loss = recon_loss + self.perc_weight * perc_loss + self.vq_weight * vq_loss
-        
-        self.log("val_loss", total_loss, prog_bar=True)
+
+        with torch.no_grad():
+            mel_cpu = mel_for_loss.detach().cpu()
+            x_cpu = x.detach().cpu()
+            vq_cpu = vq_loss.detach().cpu() if isinstance(vq_loss, torch.Tensor) else torch.tensor(vq_loss)
+            recon_cpu = self.recon_fn(mel_cpu, x_cpu)
+            perc_cpu = self.perc_fn(mel_cpu, x_cpu)
+            total_cpu = recon_cpu + self.perc_weight * perc_cpu + self.vq_weight * vq_cpu
+
+        self.log("val_loss", float(total_cpu), prog_bar=True)
         return total_loss
 
     def on_train_epoch_end(self):
@@ -82,3 +115,19 @@ class AudioCodecModule(L.LightningModule):
         with open("plots/loss_curves.json", "w") as f:
             json.dump({"train": self.train_epoch_losses, "val": self.val_epoch_losses}, f)
             print(f"Loss curves saved: {len(self.train_epoch_losses)} epochs")
+        try:
+            import matplotlib.pyplot as plt
+            plt.figure()
+            if len(self.train_epoch_losses) > 0:
+                plt.plot(self.train_epoch_losses, label='train')
+            if len(self.val_epoch_losses) > 0:
+                plt.plot(self.val_epoch_losses, label='val')
+            plt.xlabel('epoch')
+            plt.ylabel('loss')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(Path('plots') / 'loss_curve.png')
+            plt.close()
+            print('Loss curve image saved: plots/loss_curve.png')
+        except Exception:
+            pass

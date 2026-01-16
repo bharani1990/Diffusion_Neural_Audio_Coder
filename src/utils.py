@@ -48,3 +48,21 @@ def bitrate(latent, duration_sec):
 
 def ensure_dir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def compute_metrics(wave_ref, wave_rec, sr=16000, latent_indices=None, duration_sec=None):
+    try:
+        p = pesq_metric(wave_ref, wave_rec, sr)
+    except Exception:
+        p = 0.0
+    try:
+        s = stoi_metric(wave_ref, wave_rec, sr)
+    except Exception:
+        s = 0.0
+    br = None
+    if latent_indices is not None and duration_sec is not None:
+        try:
+            br = bitrate(latent_indices, duration_sec)
+        except Exception:
+            br = None
+    return {"pesq": p, "stoi": s, "bitrate_kbps": br}

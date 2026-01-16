@@ -105,6 +105,14 @@ class CompressionEncoder(nn.Module):
         z_q, vq_loss, idx = self.vq(z)
         return z_q, vq_loss, idx
 
+    def encode_no_vq(self, x):
+        x = self.act(self.conv1(x))
+        x = self.act(self.conv2(x))
+        x = self.act(self.conv3(x))
+        x = self.res(x)
+        z = self.conv4(x)
+        return z
+
 
 class DiffusionDecoder(nn.Module):
     def __init__(self, latent_dim=16, hidden_dim=256, t_dim=128):
