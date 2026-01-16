@@ -26,16 +26,25 @@ DIFFUSION_DROPOUT = 0.1
 BETA_START = 1e-4
 BETA_END = 0.02
 
-LR = 1e-3
+LR = 1e-4
 VQ_WEIGHT = 0.25
 PERCEPTUAL_WEIGHT = 0.5
 TRAIN_EPOCHS = 50
 TRAIN_BATCH_SIZE = 4
 
 OPTIMIZER = "adam"
-SCHEDULER = "step"
+OPTIMIZER = "adamw"
+SCHEDULER = "cosine"  # options: 'step', 'cosine'
 SCHEDULER_STEP_SIZE = 10
 SCHEDULER_GAMMA = 0.5
+
+# Validation waveform metrics (uses vocoder to synthesize from mels)
+VALIDATION_WAVEFORM_METRICS = True
+
+# VQ / latent capacity knobs (easy to change without code edits)
+VQ_NUM_EMBEDDINGS = NUM_EMBEDDINGS
+VQ_EMBEDDING_DIM = EMBEDDING_DIM
+LATENT_SPATIAL_SCALE = 1  # increase to raise latent spatial resolution
 
 DATA_DIR = Path("data")
 RAW_DATA_DIR = DATA_DIR / "raw"
@@ -75,8 +84,15 @@ DEBUG_MODE = False
 DEBUG_BATCH_SIZE = 2
 
 USE_MIXED_PRECISION = True
-PRECISION = "16-mixed"
+PRECISION = "32"
 
 GRADIENT_CLIP_VAL = 1.0
 GRADIENT_CLIP_ALGORITHM = "norm"
 SEED = 42
+
+# Early stopping
+ENABLE_EARLY_STOPPING = True
+EARLY_STOPPING_MONITOR = MONITOR_METRIC
+EARLY_STOPPING_MODE = MONITOR_MODE
+EARLY_STOPPING_PATIENCE = 5
+EARLY_STOPPING_MIN_DELTA = 1e-4

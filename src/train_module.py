@@ -5,6 +5,8 @@ import lightning as L
 from pathlib import Path
 import json
 from src.model import AudioCodec
+from src import config as cfg
+from src.utils import pesq_metric, stoi_metric
 
 
 class PerceptualLoss(nn.Module):
@@ -44,12 +46,30 @@ class AudioCodecModule(L.LightningModule):
         self.perc_fn = PerceptualLoss()
 
     def configure_optimizers(self):
-        opt = torch.optim.Adam(self.parameters(), lr=self.lr, betas=(0.9, 0.999))
-        sched = torch.optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.5)
-        return [opt], [sched]
+        if getattr(cfg, 'OPTIMIZER', 'adam') == 'adamw':
+            opt = torch.optim.AdamW(self.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2)
+        else:
+            opt = torch.optim.Adam(self.parameters(), lr=self.lr, betas=(0.9, 0.999))
+
+        sched_type = getattr(cfg, 'SCHEDULER', 'step')
+        if sched_type == 'cosine':
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, cfg.TRAIN_EPOCHS))
+            return {
+                'optimizer': opt,
+                'lr_scheduler': {
+                    'scheduler': sched,
+                    'interval': 'epoch',
+                    'frequency': 1,
+                }
+            }
+        else:
+            sched = torch.optim.lr_scheduler.StepLR(opt, step_size=getattr(cfg, 'SCHEDULER_STEP_SIZE', 10), gamma=getattr(cfg, 'SCHEDULER_GAMMA', 0.5))
+            return [opt], [sched]
 
     def training_step(self, batch, batch_idx):
         x = batch
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            raise RuntimeError(f"Input contains NaN/Inf at batch {batch_idx}")
         t = torch.randint(0, 1000, (x.size(0),), device=x.device)
 
         mel, vq_loss = self.model(x, t)
@@ -62,6 +82,27 @@ class AudioCodecModule(L.LightningModule):
         recon_loss = self.recon_fn(mel_for_loss, x)
         perc_loss = self.perc_fn(x, mel_for_loss)
         total_loss = recon_loss + self.perc_weight * perc_loss + self.vq_weight * vq_loss
+
+        # log individual components for diagnosis
+        try:
+            self.log('recon_loss_step', recon_loss, on_step=True, on_epoch=False, prog_bar=False)
+            self.log('perc_loss_step', perc_loss, on_step=True, on_epoch=False, prog_bar=False)
+            # vq_loss may be scalar or tensor
+            if isinstance(vq_loss, torch.Tensor):
+                self.log('vq_loss_step', vq_loss, on_step=True, on_epoch=False, prog_bar=False)
+            else:
+                self.log('vq_loss_step', float(vq_loss), on_step=True, on_epoch=False, prog_bar=False)
+        except Exception:
+            pass
+
+        if torch.isnan(total_loss) or torch.isinf(total_loss):
+            msg = {
+                'batch_idx': batch_idx,
+                'recon_loss': float(recon_loss.detach().cpu()) if torch.isfinite(recon_loss).all() else None,
+                'perc_loss': float(perc_loss.detach().cpu()) if torch.isfinite(perc_loss).all() else None,
+                'vq_loss': float(vq_loss.detach().cpu()) if isinstance(vq_loss, torch.Tensor) and torch.isfinite(vq_loss).all() else None,
+            }
+            raise RuntimeError(f"NaN/Inf detected in loss at batch {batch_idx}: {msg}")
 
         with torch.no_grad():
             mel_cpu = mel_for_loss.detach().cpu()
@@ -98,12 +139,68 @@ class AudioCodecModule(L.LightningModule):
             total_cpu = recon_cpu + self.perc_weight * perc_cpu + self.vq_weight * vq_cpu
 
         self.log("val_loss", float(total_cpu), prog_bar=True)
+
+        if getattr(cfg, 'VALIDATION_WAVEFORM_METRICS', False) and batch_idx == 0:
+            try:
+                if mel_for_loss.dim() == 4:
+                    mel_voc = mel_for_loss.squeeze(1).detach().cpu()
+                else:
+                    mel_voc = mel_for_loss.detach().cpu()
+
+                if x.dim() == 4:
+                    x_voc = x.squeeze(1).detach().cpu()
+                else:
+                    x_voc = x.detach().cpu()
+
+                wave_ref = self.model.to_waveform(x_voc)
+                wave_rec = self.model.to_waveform(mel_voc)
+
+                wave_ref_np = wave_ref.squeeze().cpu().numpy()
+                wave_rec_np = wave_rec.squeeze().cpu().numpy()
+
+                p = pesq_metric(wave_ref_np, wave_rec_np, cfg.SAMPLE_RATE)
+                s = stoi_metric(wave_ref_np, wave_rec_np, cfg.SAMPLE_RATE)
+                self.log('val_pesq', float(p))
+                self.log('val_stoi', float(s))
+            except Exception:
+                pass
+
         return total_loss
 
     def on_train_epoch_end(self):
         train_loss = self.trainer.callback_metrics.get("train_loss", 0)
         if train_loss:
             self.train_epoch_losses.append(float(train_loss))
+
+    def on_train_epoch_start(self):
+        try:
+            total = int(self.trainer.max_epochs)
+        except Exception:
+            total = None
+        one_based = int(self.current_epoch) + 1
+        if total:
+            print(f"Starting epoch {one_based}/{total}")
+        else:
+            print(f"Starting epoch {one_based}")
+        try:
+            self.log('epoch', one_based)
+        except Exception:
+            pass
+
+    def on_after_backward(self):
+        # compute gradient norm for diagnostics
+        try:
+            total_norm = 0.0
+            for p in self.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += (param_norm.item() ** 2)
+            total_norm = total_norm ** 0.5
+            self.log('grad_norm', total_norm, on_step=True, on_epoch=False)
+            if total_norm > 1e3:
+                print(f"Large grad norm detected: {total_norm:.3f}")
+        except Exception:
+            pass
 
     def on_validation_epoch_end(self):
         val_loss = self.trainer.callback_metrics.get("val_loss", 0)

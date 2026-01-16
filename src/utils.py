@@ -51,6 +51,7 @@ def ensure_dir(path):
 
 
 def compute_metrics(wave_ref, wave_rec, sr=16000, latent_indices=None, duration_sec=None):
+    metric_dict = {}  
     try:
         p = pesq_metric(wave_ref, wave_rec, sr)
     except Exception:
@@ -65,4 +66,5 @@ def compute_metrics(wave_ref, wave_rec, sr=16000, latent_indices=None, duration_
             br = bitrate(latent_indices, duration_sec)
         except Exception:
             br = None
+
     return {"pesq": p, "stoi": s, "bitrate_kbps": br}

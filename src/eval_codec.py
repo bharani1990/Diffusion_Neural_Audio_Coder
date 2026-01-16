@@ -99,8 +99,6 @@ def print_summary(results, model_name):
     print(f"EVALUATION: {model_name}")
     print("="*70)
     
-    # calculate means only if pesq and stoi are positive
-
     pesq_values = [r['pesq'] for r in results if r['pesq'] > 0]
     stoi_values = [r['stoi'] for r in results if r['stoi'] > 0]
     latency_values = [r['latency_ms'] for r in results]

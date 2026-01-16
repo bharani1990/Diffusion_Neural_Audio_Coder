@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.loggers import CSVLogger
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,7 +66,17 @@ def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, l
         save_top_k=cfg.SAVE_TOP_K,
         save_last=True,
     )
-    
+
+    callbacks = [checkpoint_callback]
+    if getattr(cfg, 'ENABLE_EARLY_STOPPING', False):
+        early_cb = EarlyStopping(
+            monitor=getattr(cfg, 'EARLY_STOPPING_MONITOR', cfg.MONITOR_METRIC),
+            mode=getattr(cfg, 'EARLY_STOPPING_MODE', cfg.MONITOR_MODE),
+            patience=getattr(cfg, 'EARLY_STOPPING_PATIENCE', 5),
+            min_delta=getattr(cfg, 'EARLY_STOPPING_MIN_DELTA', 1e-4),
+        )
+        callbacks.append(early_cb)
+
     accelerator = 'gpu' if torch.cuda.is_available() and cfg.USE_GPU else 'cpu'
     devices = 1 if accelerator == 'gpu' else None
 
@@ -74,9 +84,11 @@ def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, l
         max_epochs=epochs,
         accelerator=accelerator,
         devices=devices,
-        callbacks=[checkpoint_callback],
+        callbacks=callbacks,
         logger=CSVLogger(save_dir=str(cfg.CHECKPOINT_DIR), name=""),
         precision=cfg.PRECISION,
+        gradient_clip_val=cfg.GRADIENT_CLIP_VAL,
+        gradient_clip_algorithm=cfg.GRADIENT_CLIP_ALGORITHM,
         enable_progress_bar=True,
         log_every_n_steps=cfg.LOG_INTERVAL,
     )
@@ -92,7 +104,7 @@ def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, l
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Train audio codec")
-    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--latent_dim", type=int, default=16, help="Latent dimension")

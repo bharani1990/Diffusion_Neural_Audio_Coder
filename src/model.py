@@ -22,11 +22,17 @@ class TimeEmbedding(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_c, out_c, t_dim=None):
+    def __init__(self, in_c, out_c, t_dim=None, gn_groups=8):
         super().__init__()
-        self.norm1 = nn.GroupNorm(8, in_c)
+        def _safe_groups(channels, target_groups=gn_groups):
+            g = min(target_groups, channels)
+            while g > 1 and (channels % g) != 0:
+                g -= 1
+            return max(1, g)
+
+        self.norm1 = nn.GroupNorm(_safe_groups(in_c), in_c)
         self.conv1 = nn.Conv2d(in_c, out_c, 3, padding=1)
-        self.norm2 = nn.GroupNorm(8, out_c)
+        self.norm2 = nn.GroupNorm(_safe_groups(out_c), out_c)
         self.conv2 = nn.Conv2d(out_c, out_c, 3, padding=1)
         self.t_proj = nn.Linear(t_dim, out_c) if t_dim else None
         self.skip = nn.Conv2d(in_c, out_c, 1) if in_c != out_c else nn.Identity()
@@ -42,44 +48,57 @@ class ResBlock(nn.Module):
         return self.skip(x) + h
 
 
-class VQ(nn.Module):
-    def __init__(self, num_embed=4096, embed_dim=16, decay=0.99):
+class VQEMA(nn.Module):
+    def __init__(self, num_embed=4096, embed_dim=16, decay=0.99, eps=1e-5):
         super().__init__()
-        self.num_embed = num_embed
-        self.embed_dim = embed_dim
-        self.decay = decay
-        self.cluster_size = torch.zeros(num_embed)
-        w = torch.randn(num_embed, embed_dim)
-        nn.init.uniform_(w, -1.0 / num_embed, 1.0 / num_embed)
-        self.w = w
+        self.num_embed = int(num_embed)
+        self.embed_dim = int(embed_dim)
+        self.decay = float(decay)
+        self.eps = float(eps)
+
+        self.embedding = nn.Embedding(self.num_embed, self.embed_dim)
+        nn.init.uniform_(self.embedding.weight, -1.0 / self.num_embed, 1.0 / self.num_embed)
+
+        self.register_buffer('cluster_size', torch.zeros(self.num_embed))
+        self.register_buffer('embed_avg', self.embedding.weight.data.clone())
 
     def forward(self, z):
         B, C, H, W = z.shape
-        z_flat = z.permute(0, 2, 3, 1).reshape(-1, self.embed_dim)
-        
-        w = self.w.to(z.device)
-        cluster_size = self.cluster_size.to(z.device)
-        
+        z_perm = z.permute(0, 2, 3, 1).contiguous()
+        z_flat = z_perm.view(-1, self.embed_dim)
+
+
+        embed_weight = self.embedding.weight
         dist = (
-            (z_flat ** 2).sum(1, keepdim=True)
-            - 2 * z_flat @ w.t()
-            + (w ** 2).sum(1, keepdim=True).t()
+            (z_flat ** 2).sum(dim=1, keepdim=True)
+            - 2.0 * z_flat @ embed_weight.t()
+            + (embed_weight ** 2).sum(dim=1, keepdim=True).t()
         )
-        idx = dist.argmin(dim=1)
-        z_q_flat = w[idx]
+
+        encoding_indices = dist.argmin(dim=1)
+        z_q_flat = embed_weight[encoding_indices]
+
         z_q = z_q_flat.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
-        
-        loss = torch.mean((z.detach() - z_q) ** 2) + 0.25 * torch.mean((z - z_q.detach()) ** 2)
-        z_q = z + (z_q - z).detach()
-        
+
+        loss_recon = torch.mean((z.detach() - z_q) ** 2)
+        loss_commit = 0.25 * torch.mean((z - z_q.detach()) ** 2)
+        loss = loss_recon + loss_commit
+
+        z_q_st = z + (z_q - z).detach()
+
         if self.training:
             with torch.no_grad():
-                mask = torch.zeros(self.num_embed, device=z.device)
-                mask.scatter_add_(0, idx, torch.ones_like(idx, dtype=torch.float32))
-                cluster_size = cluster_size * self.decay + mask * (1 - self.decay)
-                self.cluster_size = cluster_size.to(self.cluster_size.device)
-        
-        return z_q, loss, idx.view(B, H, W)
+                encodings = torch.nn.functional.one_hot(encoding_indices, num_classes=self.num_embed).type(z_flat.dtype)
+                n = encodings.sum(dim=0)
+                embed_sum = encodings.t() @ z_flat  
+                self.cluster_size = self.cluster_size.to(z.device) * self.decay + (1 - self.decay) * n.to(self.cluster_size.dtype)
+                self.embed_avg = self.embed_avg.to(z.device) * self.decay + (1 - self.decay) * embed_sum.to(self.embed_avg.dtype)
+                n_total = self.cluster_size.sum()
+                cluster_size = (self.cluster_size + self.eps) / (n_total + self.num_embed * self.eps) * n_total
+                new_weight = self.embed_avg / cluster_size.unsqueeze(1)
+                self.embedding.weight.data.copy_(new_weight)
+
+        return z_q_st, loss, encoding_indices.view(B, H, W)
 
 
 class CompressionEncoder(nn.Module):
@@ -93,7 +112,7 @@ class CompressionEncoder(nn.Module):
             ResBlock(hidden_dim, hidden_dim)
         )
         self.conv4 = nn.Conv2d(hidden_dim, latent_dim, 1)
-        self.vq = VQ(num_embed=4096, embed_dim=latent_dim)
+        self.vq = VQEMA(num_embed=4096, embed_dim=latent_dim)
         self.act = nn.ReLU()
 
     def forward(self, x):
@@ -137,7 +156,13 @@ class DiffusionDecoder(nn.Module):
         self.up3 = nn.ConvTranspose2d(hidden_dim // 2, hidden_dim // 4, 4, stride=2, padding=1)
         self.res5 = ResBlock(hidden_dim // 4, hidden_dim // 4, t_dim)
         
-        self.norm = nn.GroupNorm(8, hidden_dim // 4)
+        def _safe_groups(channels, target_groups=8):
+            g = min(target_groups, channels)
+            while g > 1 and (channels % g) != 0:
+                g -= 1
+            return max(1, g)
+
+        self.norm = nn.GroupNorm(_safe_groups(hidden_dim // 4), hidden_dim // 4)
         self.out = nn.Conv2d(hidden_dim // 4, 80, 3, padding=1)
         self.act = nn.SiLU()
 

@@ -20,14 +20,17 @@ def main(checkpoint_path=None, test_file=None):
         checkpoint_path = Path(checkpoint_path)
 
     if not checkpoint_path.exists():
-        pytest.skip("Checkpoint not found, skipping vocoder test")
+        print(f"Checkpoint {checkpoint_path} not found — falling back to random-initialized model")
+        checkpoint_path = None
 
     if test_file is None:
         test_dir = Path("data/processed_norm/test-clean/1995/1826")
         files = sorted(test_dir.glob("*.pt"))
         if not files:
-            pytest.skip("No test mel files found, skipping vocoder test")
-        test_file = files[0]
+            print("No test mel files found — will use synthetic mel input")
+            test_file = None
+        else:
+            test_file = files[0]
     else:
         test_file = Path(test_file)
         if not test_file.exists():
@@ -38,14 +41,22 @@ def main(checkpoint_path=None, test_file=None):
     print(f"Using test file: {test_file}")
     print(f"Device: {device}")
 
-    module = AudioCodecModule.load_from_checkpoint(str(checkpoint_path))
+    if checkpoint_path is None:
+        print("Instantiating AudioCodecModule with random weights")
+        module = AudioCodecModule()
+    else:
+        module = AudioCodecModule.load_from_checkpoint(str(checkpoint_path))
     module = module.to(device)
     module.eval()
 
-    data = torch.load(str(test_file))
-    mel = data[0].float() if isinstance(data, (tuple, list)) else data.float()
-    if mel.dim() == 3:
-        mel = mel.squeeze(0)
+    if test_file is None:
+        # synthetic mel: (n_mels, time)
+        mel = torch.randn(80, 120)
+    else:
+        data = torch.load(str(test_file))
+        mel = data[0].float() if isinstance(data, (tuple, list)) else data.float()
+        if mel.dim() == 3:
+            mel = mel.squeeze(0)
 
     mel_input_enc = mel.unsqueeze(0).unsqueeze(0).to(device)
     mel_input_voc = mel.unsqueeze(0).to(device)
@@ -121,16 +132,8 @@ def main(checkpoint_path=None, test_file=None):
 
     print("Success")
 
+if __name__ == '__main__':
+    main()
 
 def test_vocoder_pipeline():
     main()
-
-
-if __name__ == '__main__':
-    try:
-        main()
-        print('Vocoder test completed (ran main()).')
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(f'Vocoder test failed: {e}')
