@@ -102,17 +102,19 @@ class VQEMA(nn.Module):
 
 
 class CompressionEncoder(nn.Module):
-    def __init__(self, latent_dim=16, hidden_dim=256):
+    def __init__(self, latent_dim=16, hidden_dim=256, num_embeddings=4096, num_res_blocks=2):
         super().__init__()
         self.conv1 = nn.Conv2d(1, hidden_dim // 2, 4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(hidden_dim // 2, hidden_dim, 4, stride=2, padding=1)
         self.conv3 = nn.Conv2d(hidden_dim, hidden_dim, 4, stride=2, padding=1)
-        self.res = nn.Sequential(
-            ResBlock(hidden_dim, hidden_dim),
-            ResBlock(hidden_dim, hidden_dim)
-        )
+        
+        res_blocks = []
+        for _ in range(num_res_blocks):
+            res_blocks.append(ResBlock(hidden_dim, hidden_dim))
+        self.res = nn.Sequential(*res_blocks)
+        
         self.conv4 = nn.Conv2d(hidden_dim, latent_dim, 1)
-        self.vq = VQEMA(num_embed=4096, embed_dim=latent_dim)
+        self.vq = VQEMA(num_embed=num_embeddings, embed_dim=latent_dim)
         self.act = nn.ReLU()
 
     def forward(self, x):
@@ -217,10 +219,10 @@ class HiFiGAN(nn.Module):
 
 
 class AudioCodec(nn.Module):
-    def __init__(self, latent_dim=16, hidden_dim=256, t_dim=128):
+    def __init__(self, latent_dim=16, hidden_dim=256, t_dim=128, num_embeddings=4096, num_res_blocks=2):
         super().__init__()
-        self.encoder = CompressionEncoder(latent_dim, hidden_dim)
-        self.decoder = DiffusionDecoder(latent_dim, hidden_dim, t_dim)
+        self.encoder = CompressionEncoder(latent_dim, hidden_dim, num_embeddings, num_res_blocks)
+        self.decoder = DiffusionDecoder(latent_dim, hidden_dim, t_dim) # Decoder might also need num_res_blocks? Checking...
         self.vocoder = HiFiGAN(num_mels=80)
         self.latent_dim = latent_dim
 

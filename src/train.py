@@ -3,8 +3,10 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, Callback
 from lightning.pytorch.loggers import CSVLogger
+from typing import List
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -67,7 +69,7 @@ def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, l
         save_last=True,
     )
 
-    callbacks = [checkpoint_callback]
+    callbacks: List[Callback] = [checkpoint_callback]
     if getattr(cfg, 'ENABLE_EARLY_STOPPING', False):
         early_cb = EarlyStopping(
             monitor=getattr(cfg, 'EARLY_STOPPING_MONITOR', cfg.MONITOR_METRIC),
@@ -78,7 +80,7 @@ def train(epochs=cfg.TRAIN_EPOCHS, batch_size=cfg.TRAIN_BATCH_SIZE, lr=cfg.LR, l
         callbacks.append(early_cb)
 
     accelerator = 'gpu' if torch.cuda.is_available() and cfg.USE_GPU else 'cpu'
-    devices = 1 if accelerator == 'gpu' else None
+    devices = 1 if accelerator == 'gpu' else 'auto'
 
     trainer = L.Trainer(
         max_epochs=epochs,

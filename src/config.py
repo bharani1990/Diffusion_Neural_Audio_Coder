@@ -2,19 +2,19 @@ from pathlib import Path
 
 SAMPLE_RATE = 16000
 N_MELS = 80
-N_FFT = 400
-HOP_LENGTH = 160
-F_MIN = 80
+N_FFT = 1024
+HOP_LENGTH = 256
+F_MIN = 0
 F_MAX = 8000
 MEL_SCALE = "linear"
 
 
-LATENT_DIM = 16
+LATENT_DIM = 64
 HIDDEN_DIM = 256
-NUM_RES_BLOCKS = 2
+NUM_RES_BLOCKS = 4
 
-NUM_EMBEDDINGS = 4096
-EMBEDDING_DIM = 16
+NUM_EMBEDDINGS = 8192
+EMBEDDING_DIM = 64
 VQ_DECAY = 0.99
 VQ_EPSILON = 1e-5
 
@@ -34,17 +34,15 @@ TRAIN_BATCH_SIZE = 4
 
 OPTIMIZER = "adam"
 OPTIMIZER = "adamw"
-SCHEDULER = "cosine"  # options: 'step', 'cosine'
+SCHEDULER = "cosine"
 SCHEDULER_STEP_SIZE = 10
 SCHEDULER_GAMMA = 0.5
 
-# Validation waveform metrics (uses vocoder to synthesize from mels)
 VALIDATION_WAVEFORM_METRICS = True
 
-# VQ / latent capacity knobs (easy to change without code edits)
 VQ_NUM_EMBEDDINGS = NUM_EMBEDDINGS
 VQ_EMBEDDING_DIM = EMBEDDING_DIM
-LATENT_SPATIAL_SCALE = 1  # increase to raise latent spatial resolution
+LATENT_SPATIAL_SCALE = 1
 
 DATA_DIR = Path("data")
 RAW_DATA_DIR = DATA_DIR / "raw"
@@ -90,7 +88,6 @@ GRADIENT_CLIP_VAL = 1.0
 GRADIENT_CLIP_ALGORITHM = "norm"
 SEED = 42
 
-# Early stopping
 ENABLE_EARLY_STOPPING = True
 EARLY_STOPPING_MONITOR = MONITOR_METRIC
 EARLY_STOPPING_MODE = MONITOR_MODE

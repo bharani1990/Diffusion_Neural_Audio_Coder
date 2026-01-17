@@ -33,10 +33,15 @@ class PerceptualLoss(nn.Module):
 
 
 class AudioCodecModule(L.LightningModule):
-    def __init__(self, latent_dim=16, hidden_dim=256, lr=1e-3, vq_weight=0.25, perc_weight=0.5):
+    def __init__(self, latent_dim=64, hidden_dim=256, lr=1e-3, vq_weight=0.25, perc_weight=0.5, num_embeddings=8192, num_res_blocks=4):
         super().__init__()
         self.save_hyperparameters()
-        self.model = AudioCodec(latent_dim=latent_dim, hidden_dim=hidden_dim)
+        self.model = AudioCodec(
+            latent_dim=latent_dim, 
+            hidden_dim=hidden_dim, 
+            num_embeddings=num_embeddings, 
+            num_res_blocks=num_res_blocks
+        )
         self.lr = lr
         self.vq_weight = vq_weight
         self.perc_weight = perc_weight
@@ -54,17 +59,9 @@ class AudioCodecModule(L.LightningModule):
         sched_type = getattr(cfg, 'SCHEDULER', 'step')
         if sched_type == 'cosine':
             sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, cfg.TRAIN_EPOCHS))
-            return {
-                'optimizer': opt,
-                'lr_scheduler': {
-                    'scheduler': sched,
-                    'interval': 'epoch',
-                    'frequency': 1,
-                }
-            }
         else:
             sched = torch.optim.lr_scheduler.StepLR(opt, step_size=getattr(cfg, 'SCHEDULER_STEP_SIZE', 10), gamma=getattr(cfg, 'SCHEDULER_GAMMA', 0.5))
-            return [opt], [sched]
+        return [opt], [sched]
 
     def training_step(self, batch, batch_idx):
         x = batch
@@ -174,7 +171,7 @@ class AudioCodecModule(L.LightningModule):
 
     def on_train_epoch_start(self):
         try:
-            total = int(self.trainer.max_epochs)
+            total = int(self.trainer.max_epochs) if self.trainer.max_epochs is not None else None
         except Exception:
             total = None
         one_based = int(self.current_epoch) + 1
