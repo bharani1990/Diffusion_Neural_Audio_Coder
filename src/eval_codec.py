@@ -1,8 +1,11 @@
 import sys
+import os
 from pathlib import Path
 import torch
 import time
 import numpy as np
+
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -34,6 +37,9 @@ def evaluate_codec(model, test_files):
     with torch.no_grad():
         for idx, mel_file in enumerate(test_files):
             try:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
                 data = torch.load(mel_file)
                 if isinstance(data, (tuple, list)):
                     mel = data[0].float()
@@ -53,15 +59,8 @@ def evaluate_codec(model, test_files):
                 duration_sec = mel.shape[-1] * 0.01
                 br = bitrate(indices, duration_sec)
                 
-                try:
-                    wave_orig = model.model.to_waveform(mel_input_voc)
-                except Exception:
-                    wave_orig = model.model.to_waveform(mel_input_voc.detach().cpu())
-
-                try:
-                    wave_recon = model.model.to_waveform(mel_recon)
-                except Exception:
-                    wave_recon = model.model.to_waveform(mel_recon.detach().cpu())
+                wave_orig = model.model.to_waveform(mel_input_voc)
+                wave_recon = model.model.to_waveform(mel_recon)
 
                 wave_orig_np = wave_orig.squeeze().cpu().numpy()
                 wave_recon_np = wave_recon.squeeze().cpu().numpy()
@@ -80,6 +79,8 @@ def evaluate_codec(model, test_files):
                 }
                 results.append(result)
                 print(f"Sample {idx:2d}: PESQ={result['pesq']:.3f} STOI={result['stoi']:.3f} Latency={latency_ms:.2f}ms Bitrate={result['bitrate_kbps']:.2f}kbps")
+                
+                del mel_input_enc, mel_input_voc, z_q, mel_recon, wave_orig, wave_recon, wave_orig_np, wave_recon_np
                 
             except Exception as e:
                 import traceback
@@ -123,9 +124,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate audio codec")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint")
     parser.add_argument("--num_samples", type=int, default=10, help="Number of samples")
+    parser.add_argument("--device", type=str, default=None, help="Device to use (cuda or cpu)")
     args = parser.parse_args()
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if args.device:
+        device = torch.device(args.device)
+    else:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     
     test_files = load_test_files(args.num_samples)
@@ -139,7 +144,7 @@ if __name__ == "__main__":
         args.checkpoint = "lightning_logs/checkpoints/last.ckpt"
     
     try:
-        module = AudioCodecModule.load_from_checkpoint(args.checkpoint)
+        module = AudioCodecModule.load_from_checkpoint(args.checkpoint, map_location=device)
         model = module.to(device)
         results = evaluate_codec(model, test_files)
         print_summary(results, "AudioCodec")

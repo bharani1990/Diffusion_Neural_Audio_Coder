@@ -235,12 +235,16 @@ class AudioCodec(nn.Module):
         return mel
 
     def to_waveform(self, mel):
+        if mel.dim() == 4:
+            mel = mel.mean(dim=1)
+        
         if mel.dim() == 3:
-            mel = mel.unsqueeze(-1)
-        B, C, H, W = mel.shape
-        mel_flat = mel.reshape(B, C, H * W)
-        wave = self.vocoder(mel_flat)
-        return wave
+            device = next(self.vocoder.parameters()).device
+            mel = mel.to(device)
+            wave = self.vocoder(mel)
+            return wave
+        else:
+            raise ValueError(f"Could not resolve mel input to 3 dimensions (B, 80, T). Final shape: {mel.shape}")
 
     def forward(self, x, t):
         z_q, vq_loss, idx = self.encode(x)
