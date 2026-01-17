@@ -31,3 +31,6 @@
 
 - **Step 6:** To check if everything works, we can run the `src/eval_codec.py` to begin testing
   - `uv run python src/eval_codec.py`
+
+- **Step 7:** For Demonstration, you can typically 'run all' in the `demo/plots_and_demo.ipynb`
+  - `cd demo`
