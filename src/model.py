@@ -222,7 +222,7 @@ class AudioCodec(nn.Module):
     def __init__(self, latent_dim=16, hidden_dim=256, t_dim=128, num_embeddings=4096, num_res_blocks=2):
         super().__init__()
         self.encoder = CompressionEncoder(latent_dim, hidden_dim, num_embeddings, num_res_blocks)
-        self.decoder = DiffusionDecoder(latent_dim, hidden_dim, t_dim) # Decoder might also need num_res_blocks? Checking...
+        self.decoder = DiffusionDecoder(latent_dim, hidden_dim, t_dim)
         self.vocoder = HiFiGAN(num_mels=80)
         self.latent_dim = latent_dim
 

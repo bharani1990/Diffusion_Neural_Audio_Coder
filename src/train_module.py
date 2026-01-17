@@ -80,11 +80,9 @@ class AudioCodecModule(L.LightningModule):
         perc_loss = self.perc_fn(x, mel_for_loss)
         total_loss = recon_loss + self.perc_weight * perc_loss + self.vq_weight * vq_loss
 
-        # log individual components for diagnosis
         try:
             self.log('recon_loss_step', recon_loss, on_step=True, on_epoch=False, prog_bar=False)
             self.log('perc_loss_step', perc_loss, on_step=True, on_epoch=False, prog_bar=False)
-            # vq_loss may be scalar or tensor
             if isinstance(vq_loss, torch.Tensor):
                 self.log('vq_loss_step', vq_loss, on_step=True, on_epoch=False, prog_bar=False)
             else:

@@ -66,5 +66,10 @@ def compute_metrics(wave_ref, wave_rec, sr=16000, latent_indices=None, duration_
             br = bitrate(latent_indices, duration_sec)
         except Exception:
             br = None
-
-    return {"pesq": p, "stoi": s, "bitrate_kbps": br}
+            
+    metric_dict.update({
+        "pesq": p,
+        "stoi": s,
+        "bitrate_kbps": br
+    })
+    return metric_dict
